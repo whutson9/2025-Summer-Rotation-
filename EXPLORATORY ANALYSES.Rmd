@@ -1,0 +1,1007 @@
+---
+title: "EXPLORATORY ANALYSES"
+author: "William Hutson"
+date: "2025-07-08"
+output:
+  html_document:
+    df_print: paged
+---
+
+#Package Setup
+##Set own working directory here 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tictoc)
+library(lcmm)
+library(readxl)
+library(table1)
+library(parameters)
+library(glue)
+library(ggalluvial)
+library(here)
+
+setwd("/Users/whutson9/Documents/Pitt MSTP/2025 Summer Rotation/Coding/2025 Summer Rotation Directory")
+```
+
+#Load & Clean Data
+##Place raw data file in WD and rename appropriately
+##Returns a data list containing full data file, and two data frames for only complete years for K6 and PCL6 
+###Need to bin very high and high outcomes for PCL6
+```{r load data, echo=FALSE}
+rm(list = ls())
+
+data <- list()
+  
+data$raw_data <- read.csv(here("071525 Data.csv"))
+    mutate(across(c(ID_PHRESH), as.character)) %>% #FILL IN FACTORS 
+  mutate(across(c(ID_NHOOD, i_hghbldcho, i_cancer, current_smoker, binge_drinking,
+                  problem_drinking, depression, i_employed,
+                  k6_distress, k6_illness, i_hrtdse, i_kiddse,
+                  i_diabe, i_hghbldpre, i_arthritis,
+                  i_hlth_gen, discrim_events, any_discrim,
+                  ptsd, any_drinking, ASTHMA, i_COPD, wave,
+                  HLTHLMTA, HLTHLMTB, HLTHLMTC, HLTHLMTD,
+                  HLTHLMTE, HLTHLMTF, HLTHLMTG, HLTHLMTH,
+                  HLTHLMTI, HLTHLMTJ, in11, in13, in14, in16, in18, in21, 
+                  in23, year, sex, id_nhood_base, i_marr_stat, i_married, race4,
+                  highest_edu), as.factor)) %>%  
+  mutate(across(c(ALCH_DAYS, stress, phq2, physfunc, pcl6, ALCH_DRINKS,
+                  household_income, nwaves, age_yrs, id_subject,
+                  unfair_treatment), as.numeric)) %>% #FILL IN NUMERIC
+  mutate(age_cat = factor(case_when(
+            age_yrs >= 18 & age_yrs < 35 ~ "18–34",
+            age_yrs >= 35 & age_yrs < 50 ~ "35–49",
+            age_yrs >= 50 & age_yrs < 65 ~ "50–64",
+            age_yrs >= 65 ~ "65+",
+            TRUE ~ NA_character_)),
+        k6_cat = factor(case_when(
+            k6 >=5 & k6 <13 ~ "Moderate",
+            k6 >=13 ~ "Severe",
+            TRUE ~ "Low")),
+        k6_ordinal = as.numeric(case_when(
+           k6 >=5 & k6 <13 ~ "2",
+           k6 >=13 ~ "3",
+           TRUE ~ "1")),
+        pcl6_cat = factor(case_when(
+          pcl6 >=13 & pcl6 <16 ~ "Medium",
+          pcl6 >=16 & pcl6 <25 ~ "High",
+          pcl6>=26 ~ "Very High",
+          TRUE ~ "Low")),
+        pcl6_ordinal = factor(case_when(
+          pcl6 >=13 & pcl6 <16 ~ "2",
+          pcl6 >=16 & pcl6 <25 ~ "3",
+          pcl6>=26 ~ "4",
+          TRUE ~ "1")),
+        NS_PLIVE = factor(NS_PLIVE,
+                          levels = 1:5,
+                          labels = c("Very dissatisfied",
+                                     "Dissatisfied",
+                                     "Neither satisfied nor dissatisfied",
+                                     "Satisfied",
+                                     "Very satisfied")),
+        i_hlth_gen = factor(i_hlth_gen,
+                             levels = 1:5,
+                             labels = c("Excellent",
+                                        "Very good",
+                                        "Good",
+                                        "Fair",
+                                        "Poor")),
+        
+        id_nhood_base = recode(id_nhood_base,
+                                "hd" = "Hill District",
+                                "hw" = "Homewood",
+                                "ot" = "Other"),
+        
+        ID_NHOOD = recode(ID_NHOOD,
+                                "hd" = "Hill District",
+                                "hw" = "Homewood",
+                                "ot" = "Other"), 
+        
+        race4 = recode(race4,
+                       "B" = "Black",
+                       "H" = "Hispanic non-White",
+                       "O" = "Other",
+                       "W" = "White"),
+        i_marr_stat = factor(i_marr_stat,
+                             levels = 1:4,
+                             labels = c("Married or living with a partner",
+                                        "Widowed",
+                                        "Divorced/Separated",
+                                        "Never Married")),
+                             
+        highest_edu = factor(highest_edu,
+                             levels = 1:4,
+                             labels = c("Less than high schoool",
+                                        "High school",
+                                        "Some college/trade schoool",
+                                        "College")),
+
+        sex = factor(sex,
+                     levels = 1:2,
+                     labels = c("Male", 
+                                "Female")),
+        
+        i_employed = factor(i_employed,
+                            levels = 0:1,
+                            labels = c("Unemployed",
+                                       "Employed")),
+        
+        household_income_cat = cut(household_income,
+                                    breaks = c(0, 20000, 40000, 60000, 80000, 100000, Inf),
+                                    labels = c("<20k", "20–39k", "40–59k", 
+                                               "60–79k", "80–99k", "100k+")),
+        
+        i_married = factor(i_married,
+                           levels = 0:1,
+                           labels = c("Unmarried",
+                                      "Married"))
+        ) %>% 
+  mutate(across(
+        c(ASTHMA, i_COPD, i_hghbldcho, i_cancer, current_smoker,
+          binge_drinking, problem_drinking, i_hrtdse,
+          i_kiddse, i_diabe, i_hghbldpre, i_arthritis, any_discrim, any_drinking, depression),
+        ~ factor(.x, levels = 0:1, labels = c("No", "Yes")))) %>% 
+  mutate(across(starts_with("HLTHLMT"),
+                ~ factor(.,
+                         levels = 1:3,
+                         labels = c("Not Limited", "Limited a Little", "Limited a Lot")))) %>%
+  mutate(k6_cat = factor(k6_cat, levels = c("Low", "Moderate", "Severe")),
+         pcl6_cat = factor(pcl6_cat, levels = c("Low", "Medium", "High", "Very High")))
+
+
+
+label(data$raw_data$pcl6_cat) <- "PCL6 Risk Level (Categorical)"
+label(data$raw_data$pcl6_ordinal) <- "PCL6 (Ordinal)"
+label(data$raw_data$household_income_cat) <- "Household Income (Categorical)"
+label(data$raw_data$k6_ordinal) <- "K6 (Ordinal)"
+label(data$raw_data$k6_cat) <- "K6 Distress Level"
+label(data$raw_data$age_cat) <- "Age (Categorical)"
+label(data$raw_data$ID_PHRESH) <- "PHRESH ID"
+label(data$raw_data$ID_NHOOD) <- "Neighborhood"
+label(data$raw_data$ALCH_DAYS) <- "Days Drinking Alcohol Past 30 Days"
+label(data$raw_data$i_hghbldcho) <- "High Blood Pressure"
+label(data$raw_data$i_cancer) <- "Cancer"
+label(data$raw_data$stress) <- "Perceived Stress Scale 4 (PSS-4)" 
+label(data$raw_data$current_smoker) <- "Current Smoker"
+label(data$raw_data$binge_drinking) <- "Binge Drinking (5+ usual drinks)" 
+label(data$raw_data$problem_drinking) <- "Problem Drinking (Past Month)" 
+label(data$raw_data$phq2) <- "PHQ-2"
+label(data$raw_data$depression) <- "Depression"
+label(data$raw_data$NS_PLIVE) <- "Neighborhood Satisfaction"
+label(data$raw_data$i_employed) <- "Employment"
+label(data$raw_data$physfunc) <- "Physical Functioning"
+label(data$raw_data$k6_distress) <- "K6 Mental Distress (8+)" 
+label(data$raw_data$k6_illness) <- "K6 Mental Illness (13+)" 
+label(data$raw_data$i_hrtdse) <- "Heart Disease"
+label(data$raw_data$i_kiddse) <- "Kidney Disease"
+label(data$raw_data$i_diabe) <- "Diabetes"
+label(data$raw_data$i_hghbldpre) <- "High Blood Pressure"
+label(data$raw_data$i_arthritis) <- "Arthritis"
+label(data$raw_data$i_hlth_gen) <- "Self-Rated General Health" 
+label(data$raw_data$discrim_events) <- "Past Year Discriminatory Events Count"
+label(data$raw_data$any_discrim) <- "Any Discrimination"
+label(data$raw_data$unfair_treatment) <- "Everyday Discrimination/Unfair Treatment Score"
+label(data$raw_data$pcl6) <- "PCL-6 Score"
+label(data$raw_data$k6) <- "K6 Score"
+label(data$raw_data$ptsd) <- "PTSD (PCL-6 >14)"
+label(data$raw_data$ALCH_DRINKS) <- "P30D Alcoholic Drinks" 
+label(data$raw_data$any_drinking) <- "any_drinking FILL IN" 
+label(data$raw_data$ASTHMA) <- "Asthma"
+label(data$raw_data$i_COPD) <- "COPD"
+label(data$raw_data$wave) <- "Wave"
+label(data$raw_data$household_income) <- "Household Income"
+label(data$raw_data$id_subject) <- "Subject ID"
+label(data$raw_data$year) <- "Year"
+label(data$raw_data$HLTHLMTA) <- "Limitation doing vigorous activities"
+label(data$raw_data$HLTHLMTB) <- "Limitation doing moderate activities"
+label(data$raw_data$HLTHLMTC) <- "Limitation lifting or carrying groceries"
+label(data$raw_data$HLTHLMTD) <- "Limitation climbing several flights of stairs"
+label(data$raw_data$HLTHLMTE) <- "Limitation climbing one flight of stairs"
+label(data$raw_data$HLTHLMTF) <- "Limitation bending, kneeling, or stooping"
+label(data$raw_data$HLTHLMTG) <- "Limitation walking more than a mile"
+label(data$raw_data$HLTHLMTH) <- "Limitation walking several blocks"
+label(data$raw_data$HLTHLMTI) <- "Limitation walking one block"
+label(data$raw_data$HLTHLMTJ) <- "Limitation bathing or dressing yourself"
+label(data$raw_data$in11) <- "2011 completion"
+label(data$raw_data$in13) <- "2013 completion"
+label(data$raw_data$in14) <- "2014 completion"
+label(data$raw_data$in16) <- "2015 completion"
+label(data$raw_data$in18) <- "2018 completion"
+label(data$raw_data$in21) <- "2021 completion"
+label(data$raw_data$in23) <- "2023 completion"
+label(data$raw_data$nwaves) <- "Number of Waves compelted" 
+label(data$raw_data$id_nhood_base) <- "Baseline Neighborhood" 
+label(data$raw_data$i_marr_stat) <- "Marital Status (Categorical)"
+label(data$raw_data$i_married) <- "Marital Status (Binary)"
+label(data$raw_data$race4) <- "Race"
+label(data$raw_data$highest_edu) <- "Highest Education"
+label(data$raw_data$sex) <- "Sex"
+label(data$raw_data$age_yrs) <- "Age"
+
+
+data$k6_complete_years <- data$raw_data %>%
+  filter(!year %in% c("2011", "2014")) %>%
+  droplevels()
+
+data$pcl6_complete_years <- data$raw_data %>%
+  filter(!year %in% c("2011", "2013", "2014")) %>%
+  droplevels()
+```
+
+#Summary Stats
+##Returns a summary stats list containing basic summary stats on K6 and PCL6 for all waves, by year, and by year by variables
+```{r stats, echo=FALSE}
+summary_statistics <- list()
+
+
+summary_statistics$summary_allyears <- data$raw_data %>%
+  summarise(mean_k6 = round(mean(k6, na.rm = TRUE), 3),
+            sd_k6 = round(sd(k6, na.rm = TRUE), 3),
+            se_k6 = round(sd_k6 / sqrt(sum(!is.na(k6))), 3),
+            median_k6 = round(median(k6, na.rm = TRUE), 3),
+            iqr_k6 = round(IQR(k6, na.rm = TRUE), 3),
+          
+            mean_pcl6 = round(mean(pcl6, na.rm = TRUE), 3),
+            sd_pcl6 = round(sd(pcl6, na.rm = TRUE), 3),
+            se_pcl6 = round(sd_pcl6 / sqrt(sum(!is.na(pcl6))), 3),
+            median_pcl6 = round(median(pcl6, na.rm = TRUE), 3),
+            iqr_pcl6 = round(IQR(pcl6, na.rm = TRUE), 3),
+            
+            n_k6_low = sum(k6_cat == "Low Distress", na.rm = TRUE),
+            n_k6_mod = sum(k6_cat == "Moderate Distress", na.rm = TRUE),
+            n_k6_severe = sum(k6_cat == "Severe Distress", na.rm = TRUE),
+            
+            pct_k6_low = round(mean(k6_cat == "Low Distress", na.rm = TRUE) * 100, 3),
+            pct_k6_mod = round(mean(k6_cat == "Moderate Distress", na.rm = TRUE) * 100, 3),
+            pct_k6_severe = round(mean(k6_cat == "Severe Distress", na.rm = TRUE) * 100, 3)
+            )
+
+summary_byyear <- function(df){
+  df %>%
+  group_by(year) %>%
+  summarise(mean_k6 = round(mean(k6, na.rm = TRUE), 3),
+            sd_k6 = round(sd(k6, na.rm = TRUE), 3),
+            se_k6 = round(sd_k6 / sqrt(sum(!is.na(k6))), 3),
+            median_k6 = round(median(k6, na.rm = TRUE), 3),
+            iqr_k6 = round(IQR(k6, na.rm = TRUE), 3),
+          
+            mean_pcl6 = round(mean(pcl6, na.rm = TRUE), 3),
+            sd_pcl6 = round(sd(pcl6, na.rm = TRUE), 3),
+            se_pcl6 = round(sd_pcl6 / sqrt(sum(!is.na(pcl6))), 3),
+            median_pcl6 = round(median(pcl6, na.rm = TRUE), 3),
+            iqr_pcl6 = round(IQR(pcl6, na.rm = TRUE), 3),
+            
+            pct_k6_low = round(mean(k6_cat == "Low Distress", na.rm = TRUE) * 100, 3),
+            pct_k6_mod = round(mean(k6_cat == "Moderate Distress", na.rm = TRUE) * 100, 3),
+            pct_k6_severe = round(mean(k6_cat == "Severe Distress", na.rm = TRUE) * 100, 3)
+            ) %>%
+  ungroup()
+}
+
+
+summary_byyear_bydemo <- function(df, group_var){
+  df %>%
+    group_by(year, !!sym(group_var)) %>%
+    summarise(
+      mean_k6 = round(mean(k6, na.rm = TRUE), 3),
+      sd_k6 = round(sd(k6, na.rm = TRUE), 3),
+      se_k6 = round(sd_k6 / sqrt(sum(!is.na(k6))), 3),
+      median_k6 = round(median(k6, na.rm = TRUE), 3),
+      iqr_k6 = round(IQR(k6, na.rm = TRUE), 3),
+
+      mean_pcl6 = round(mean(pcl6, na.rm = TRUE), 3),
+      sd_pcl6 = round(sd(pcl6, na.rm = TRUE), 3),
+      se_pcl6 = round(sd_pcl6 / sqrt(sum(!is.na(pcl6))), 3),
+      median_pcl6 = round(median(pcl6, na.rm = TRUE), 3),
+      iqr_pcl6 = round(IQR(pcl6, na.rm = TRUE), 3),
+      
+      pct_k6_low = round(mean(k6_cat == "Low Distress", na.rm = TRUE) * 100, 3),
+            pct_k6_mod = round(mean(k6_cat == "Moderate Distress", na.rm = TRUE) * 100, 3),
+            pct_k6_severe = round(mean(k6_cat == "Severe Distress", na.rm = TRUE) * 100, 3),
+      
+      .groups = "drop"
+    ) %>%
+    mutate(grouping_var = group_var)  
+}
+
+group_vars <- c("ID_NHOOD", "sex", "age_cat", "i_employed", "highest_edu",
+  "i_hghbldcho", "i_cancer", "current_smoker", "binge_drinking",
+  "problem_drinking", "NS_PLIVE", "i_hrtdse", "i_kiddse", "i_diabe",
+  "i_hghbldpre", "i_arthritis", "i_hlth_gen", "any_discrim", "any_drinking", 
+  "ASTHMA", "i_COPD", "i_marr_stat", "i_married", "household_income_cat",
+  "HLTHLMTA", "HLTHLMTB", "HLTHLMTC", "HLTHLMTD", "HLTHLMTE", 
+  "HLTHLMTF", "HLTHLMTG", "HLTHLMTH", "HLTHLMTI", "HLTHLMTJ")
+
+
+summary_statistics$k6_summary_byyear_bydemo <- list()
+summary_statistics$pcl6_summary_byyear_bydemo <- list()
+
+
+
+
+for (var in group_vars) {
+  summary_statistics$k6_summary_byyear_bydemo[[var]] <- data.frame(summary_byyear_bydemo(data$k6_complete_years, var))
+  
+  summary_statistics$pcl6_summary_byyear_bydemo[[var]] <- data.frame(summary_byyear_bydemo(data$pcl6_complete_years, var))
+
+}
+
+summary_statistics$k6_summary_byyear <- data.frame(summary_byyear(data$k6_complete_years))
+
+summary_statistics$pcl6_summary_byyear <- data.frame(summary_byyear(data$pcl6_complete_years))
+```
+
+#(INCOMPLETE) K6 and PCL6 Histograms, Bar Charts 
+##Initializes a plot list, returns histograms and bar charts of K6 and PCL6
+```{r k6 pcl histogram, echo=FALSE, warning = FALSE}
+plots <- list()
+
+#Histograms
+plots$k6_histogram <- ggplot(data$k6_complete_years, aes(x = k6)) +
+  geom_histogram(binwidth = 1) +
+  facet_grid(rows = vars(year)) +
+  theme_minimal() +
+  labs(title = "K6 Score Distribution by Year")
+
+plots$pcl6_histogram <- ggplot(data$pcl6_complete_years, aes(x = pcl6)) +
+  geom_histogram(binwidth = 1)  +
+  facet_grid(rows = vars(year)) +
+  theme_minimal() + 
+  labs(title = "PCL6 Score Distribution by Year")
+
+
+#Bar Charts
+plots$k6_cat_bar <- ggplot(data$k6_complete_years, aes(x=k6_cat)) +
+  geom_bar() +
+  geom_text(stat = "count", aes(label = ..count..), vjust = -0.5) +
+  ylim(0, 1000) +
+  facet_grid(rows = vars(year)) +
+  theme_minimal() +
+  labs(title = "K6 Distress Level Distribution by Year")
+
+plots$pcl6_cat_bar <- ggplot(data$pcl6_complete_years, aes(x=pcl6_cat)) +
+  geom_bar() +
+  geom_text(stat = "count", aes(label = ..count..), vjust = -0.5) +
+  ylim(0, 1000) +
+  facet_grid(rows = vars(year)) +
+  theme_minimal() +
+  labs(title = "PCL6 Distress Level Distribution by Year")
+```
+
+#Mean Trajectory Plots 
+##Returns a series of plots showing the mean K6 and PCL6 for the full sample and by variables serially cross sectionally 
+###Need to figure out approrpriate labeling of N sizes 
+```{r mean traj plot, echo=FALSE, warning = FALSE}
+plots$mean_traj_plots <- list()
+
+plots$mean_traj_plots$allk6 <- 
+  ggplot(data$k6_complete_years, aes(x = factor(year), y = k6)) +
+  stat_summary(fun = mean, geom = "point", size = 1) +
+  stat_summary(fun = mean, geom = "line", aes(group = 1), linewidth = 0.5) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.05) +
+  scale_y_continuous(breaks = seq(0, 24, 2), limits = c(0, 24)) +
+  theme_classic() +
+  labs(title = "Mean K6 by Year (n=1366)",
+       x = "Year",
+       y = "Mean K6")
+
+plots$mean_traj_plots$allpcl6 <- 
+  ggplot(data$pcl6_complete_years, aes(x = factor(year), y = pcl6)) +
+  stat_summary(fun = mean, geom = "point", size = 1) +
+  stat_summary(fun = mean, geom = "line", aes(group = 1), linewidth = 0.5) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.05) +
+  scale_y_continuous(breaks = seq(0, 30, 2), limits = c(0, 30)) +
+  theme_classic() +
+  labs(title = "Mean PCL6 by Year (n=1238)",
+       x = "Year",
+       y = "Mean PCL6")
+
+plot_mean_trajectory <- function(data, outcome_var, group_var, outcome_label, group_label, y_limits) {
+  
+  data <- data %>% 
+    filter(!is.na(.data[[group_var]])) 
+  
+  
+  if (group_var == "age_cat") {
+    group_n <- data %>%
+      filter(!is.na(.data[[group_var]])) %>%
+      arrange(id_subject, year) %>%
+      group_by(id_subject) %>%
+      slice(1) %>%
+      ungroup() %>%
+      count(.data[[group_var]], name = "n") %>%
+      mutate(label = paste0(.data[[group_var]], " (n=", n, ")"))
+  } else {
+    group_n <- data %>%
+      group_by(.data[[group_var]]) %>%
+      summarise(n = n_distinct(id_subject), .groups = "drop") %>%
+      mutate(label = paste0(.data[[group_var]], " (n=", n, ")"))
+  }
+  
+  # Create named vector for legend labels
+  group_labels <- setNames(group_n$label, group_n[[group_var]])
+  
+  ggplot(data, aes(x = factor(year), 
+                   y = .data[[outcome_var]], 
+                   color = .data[[group_var]], 
+                   group = .data[[group_var]])) +
+    stat_summary(fun = mean, geom = "point", size = 1) +
+    stat_summary(fun = mean, geom = "line", linewidth = 0.5) +
+    stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.05) +
+    scale_y_continuous(breaks = seq(0, y_limits[2], 2), limits = y_limits) +
+    scale_color_discrete(labels = group_labels) +
+    theme_classic() +
+    labs(
+      title = glue::glue("Mean {outcome_label} by {group_label} by Year"),
+      x = "Year",
+      y = glue::glue("Mean {outcome_label}"),
+      color = group_label
+    )
+}
+
+stratifiers <- list(
+  sex = "Sex",
+  age_cat = "Age (at T1)",
+  i_employed = "Employment",
+  highest_edu = "Education",
+  ID_NHOOD = "Neighborhood",
+  NS_PLIVE = "Neighborhood Satisfaction",
+  i_hlth_gen = "Self-Rated General Health",
+  household_income_cat = "Household Income",
+  i_marr_stat = "Marital Status",
+  i_married = "Married",
+  any_discrim = "Discrimination",
+  any_drinking = "Any Drinking",
+  ASTHMA = "Asthma",
+  i_COPD = "COPD",
+  i_hghbldcho = "High Blood Cholesterol",
+  i_cancer = "Cancer",
+  current_smoker = "Current Smoker",
+  binge_drinking = "Binge Drinking",
+  problem_drinking = "Problem Drinking",
+  i_hrtdse = "Heart Disease",
+  i_kiddse = "Kidney Disease",
+  i_diabe = "Diabetes",
+  i_hghbldpre = "High Blood Pressure",
+  i_arthritis = "Arthritis",
+  HLTHLMTA = "Limitation doing vigorous activities", 
+  HLTHLMTB = "Limitation doing moderate activities", 
+  HLTHLMTC = "Limitation lifting or carrying groceries", 
+  HLTHLMTD = "Limitation climbing several flights of stairs",
+  HLTHLMTE = "Limitation climbing one flight of stairs", 
+  HLTHLMTF = "Limitation bending, kneeling, or stooping", 
+  HLTHLMTG = "Limitation walking more than a mile", 
+  HLTHLMTH = "Limitation walking several blocks",
+  HLTHLMTI = "Limitation walking one block", 
+  HLTHLMTJ = "Limitation bathing or dressing yourself"
+)
+
+outcomes <- list(
+  k6 = list(data = data$k6_complete_years, label = "K6", ylim = c(0, 24)),
+  pcl6 = list(data = data$pcl6_complete_years, label = "PCL6", ylim = c(0, 30))
+)
+
+# Generate plots
+for (var in names(stratifiers)) {
+  for (out in names(outcomes)) {
+    key <- paste0(out, "_by", tolower(var))
+    plots$mean_traj_plots[[key]] <- plot_mean_trajectory(
+      outcomes[[out]]$data, out, var,
+      outcomes[[out]]$label, stratifiers[[var]],
+      outcomes[[out]]$ylim
+    )
+  }
+}
+
+rm(stratifiers, outcomes)
+```
+
+#Exploratory Spaghetti Plots 
+##Returns spaghetti plots (1 line plot per study participant, stacked) to show individual trajectories for K6 and PCL6 for the full sample and by variables
+```{r spaghetti, echo=FALSE, warning = FALSE}
+plots$k6_spaghetti <- 
+  ggplot()+
+  geom_line(aes(y=k6, x=year, group=id_subject),
+data=data$k6_complete_years, show.legend = FALSE) +
+  theme(legend.position = "none") + 
+  theme_classic() +
+  labs(title = "K6 Spaghetti Plot")
+
+plots$pcl6_spaghetti <- 
+  ggplot()+
+  geom_line(aes(y=pcl6, x=year, group=id_subject),
+data=data$pcl6_complete_years, show.legend = FALSE) +
+  theme(legend.position = "none") + 
+  theme_classic() +
+  labs(title = "PCL6 Spaghetti Plot")
+```
+
+#Exploratory Sankey Plots
+##Returns sankey plots (plots showing transitions between categories) to show individual trajectories for K6 and PCL6 for the full sample and by variables
+###Need to figure out how to simplify, reduce visual mess
+```{r, echo = FALSE, warning = FALSE}
+#K6
+data$k6_wide <- data$k6_complete_years %>%
+  select(id_subject, year, k6_cat) %>%
+  mutate(year = paste0("year", year)) %>%
+  pivot_wider(names_from = year, values_from = k6_cat) %>%
+  drop_na()
+
+data$k6_long <- data$k6_wide %>%
+  pivot_longer(cols = starts_with("year"),
+               names_to = "year",
+               names_prefix = "year",
+               values_to = "k6_cat") %>%
+  arrange(id_subject, year)
+  
+plots$k6_sankey <- ggplot(data$k6_long,
+       aes(x = year, stratum = k6_cat, alluvium = id_subject, fill = k6_cat, label = k6_cat)) +
+  geom_flow(stat = "alluvium", lode.guidance = "forward", color = "blue", alpha = 0.2) +
+  geom_stratum(alpha = 1) +
+  geom_text(stat = "stratum", size = 3) +
+  scale_fill_brewer(type = "qual", palette = "Set2") +
+  labs(title = "Transitions Between K6 Categories",
+       y = "Number of Participants", x = "Year") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+#PCL6
+data$pcl6_wide <- data$pcl6_complete_years %>%
+  select(id_subject, year, pcl6_cat) %>%
+  mutate(year = paste0("year", year)) %>%
+  pivot_wider(names_from = year, values_from = pcl6_cat) %>%
+  drop_na()
+
+data$pcl6_long <- data$pcl6_wide %>%
+  pivot_longer(cols = starts_with("year"),
+               names_to = "year",
+               names_prefix = "year",
+               values_to = "pcl6_cat") %>%
+  arrange(id_subject, year)
+  
+plots$pcl6_sankey <- ggplot(data$pcl6_long,
+       aes(x = year, stratum = pcl6_cat, alluvium = id_subject, fill = pcl6_cat, label = pcl6_cat)) +
+  geom_flow(stat = "alluvium", lode.guidance = "forward", color = "blue", alpha = 0.2) +
+  geom_stratum(alpha = 1) +
+  geom_text(stat = "stratum", size = 3) +
+  scale_fill_brewer(type = "qual", palette = "Set2") +
+  labs(title = "Transitions Between PCL6 Categories",
+       y = "Number of Participants", x = "Year") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+#LCGA Linear 
+##Creates a models list and creates LCGA linear models for K6 and PCL6, returns summary statistics for models 
+##LCGA, GMM1, and GMM2 models guided by https://osf.io/preprints/psyarxiv/m58wx_v1 
+##LCGA Linear detects heterogenous groups by trajectory and assumes no within-group variation in intercept and slope (fixed effects)
+###Need to figure out how to use for loop to reduce code, and run GMM1 and GMM2 in same loop
+```{r, echo=FALSE, eval=FALSE}
+models <- list()
+models$k6 <- list()
+models$pcl6 <- list()
+
+
+##### K6 LCMM Models #####
+set.seed(2003)
+
+tic()
+
+models$k6$lcga_1class <- hlme(k6 ~ wave, subject = "id_subject", ng = 1, data = data$k6_complete_years)
+
+models$k6$lcga_2class <- gridsearch(rep = 500, maxiter = 20, minit = models$k6$lcga_1class, 
+                                 m = hlme(k6 ~ wave, subject = "id_subject",
+                                          ng = 2, data = data$k6_complete_years, mixture = ~ wave))
+
+models$k6$lcga_3class <- gridsearch(rep = 500, maxiter = 20, minit = models$k6$lcga_1class,
+                                    m = hlme(k6 ~ wave, subject = "id_subject",
+                                             ng = 3, data = data$k6_complete_years, mixture = ~ wave))
+
+
+toc()
+
+
+##### PCL6 LCMM Models #####
+set.seed(2003)
+
+tic()
+
+models$pcl6$lcga_1class <- hlme(pcl6 ~ wave, subject = "id_subject", ng = 1, data = data$pcl6_complete_years)
+
+models$pcl6$lcga_2class <- gridsearch(rep = 300, maxiter = 10, minit = models$pcl6$lcga_1class, 
+                                 m = hlme(pcl6 ~ wave, subject = "id_subject",
+                                          ng = 2, data = data$pcl6_complete_years, mixture = ~ wave))
+
+models$pcl6$lcga_3class <- gridsearch(rep = 300, maxiter = 10, minit = models$pcl6$lcga_1class,
+                                    m = hlme(pcl6 ~ wave, subject = "id_subject",
+                                             ng = 3, data = data$pcl6_complete_years, mixture = ~ wave))
+
+toc()
+
+##### Data Cleaning #####
+models$k6$lcga_summarytable <- data.frame(summarytable(models$k6$lcga_1class,
+                                                       models$k6$lcga_2class,
+                                                       models$k6$lcga_3class, 
+                                                       which = c("G", "loglik", "conv", 
+                                                                 "npm", "AIC", "BIC", 
+                                                                 "SABIC","entropy", "%class"))) 
+rownames(models$k6$lcga_summarytable) <- c("LCGA 1 class", "LCGA 2 class", "LCGA 3 class")
+
+
+
+models$pcl6$lcga_summarytable <- data.frame(summarytable(models$pcl6$lcga_1class,
+                                                         models$pcl6$lcga_2class,
+                                                         models$pcl6$lcga_3class, 
+                                                       which = c("G", "loglik", "conv", 
+                                                                 "npm", "AIC", "BIC", 
+                                                                 "SABIC","entropy", "%class"))) 
+rownames(models$pcl6$lcga_summarytable) <- c("LCGA 1 class", "LCGA 2 class", "LCGA 3 class")
+
+models$k6$lcga_2class_pprobs <- data.frame(id_subject = models$k6$lcga_2class$pprob$id_subject,
+                     lcga_2class_traj_class = factor(models$k6$lcga_2class$pprob$class))
+models$k6$lcga_3class_pprobs <- data.frame(id_subject = models$k6$lcga_3class$pprob$id_subject,
+                     lcga_3class_traj_class = factor(models$k6$lcga_3class$pprob$class))
+
+
+models$pcl6$lcga_2class_pprobs <- data.frame(id_subject = models$pcl6$lcga_2class$pprob$id_subject,
+                     lcga_2class_traj_class = factor(models$pcl6$lcga_2class$pprob$class))
+models$pcl6$lcga_3class_pprobs <- data.frame(id_subject = models$pcl6$lcga_3class$pprob$id_subject,
+                     lcga_3class_traj_class = factor(models$pcl6$lcga_3class$pprob$class))
+
+
+data$k6_complete_years <- data$k6_complete_years %>%
+  left_join(models$k6$lcga_2class_pprobs, by = "id_subject") %>%
+  left_join(models$k6$lcga_3class_pprobs, by = "id_subject") 
+
+data$pcl6_complete_years <- data$pcl6_complete_years %>%
+  left_join(models$pcl6$lcga_2class_pprobs, by = "id_subject") %>%
+  left_join(models$pcl6$lcga_3class_pprobs, by = "id_subject") 
+
+saveRDS(models, here("Models", "models.RDS"))
+```
+
+#GMM-1 Linear (RANDOM INTERCEPT) 
+##Creates GMM1 linear models for K6 and PCL6, returns summary statistics for models 
+##GMM1 detects heterogenous groups by trajectory and assumes within-group variation in intercept but not slope (random and fixed effects)
+###Need to run this code on desktop or cloud due to long run time 
+```{r, echo=FALSE, eval=FALSE}
+##### K6 GMM-1 Models #####
+set.seed(2003)
+
+tic()
+
+models$k6$gmm1_1class <- hlme(k6 ~ wave, subject = "id_subject", random=~1, ng = 1, data =
+data$k6_complete_years)
+
+models$k6$gmm1_2class <- gridsearch(rep = 500, maxiter = 20, minit = models$k6$gmm1_1class,
+hlme(k6 ~ wave, subject = "id_subject", random=~1,
+ ng = 2, data = data$k6_complete_years, mixture = ~ wave,
+ nwg=T))
+
+models$k6$gmm1_3class <- gridsearch(rep = 500, maxiter = 20, minit = models$k6$gmm1_1class,
+ hlme(k6 ~ wave, subject = "id_subject", random=~1,
+ ng = 3, data = data$k6_complete_years, mixture = ~ wave,
+ nwg=T))
+
+toc()
+
+##### PCL6 GMM-1 Models #####
+set.seed(2003)
+
+tic()
+
+models$pcl6$gmm1_1class <- hlme(pcl6 ~ wave, subject = "id_subject", random=~1, ng = 1, data =
+data$pcl6_complete_years)
+
+models$pcl6$gmm1_2class <- gridsearch(rep = 500, maxiter = 20, minit = models$pcl6$gmm1_1class,
+hlme(pcl6 ~ wave, subject = "id_subject", random=~1,
+ ng = 2, data = data$pcl6_complete_years, mixture = ~ wave,
+ nwg=T))
+
+models$pcl6$gmm1_3class <- gridsearch(rep = 500, maxiter = 20, minit = models$pcl6$gmm1_1class,
+ hlme(pcl6 ~ wave, subject = "id_subject", random=~1,
+ ng = 3, data = data$pcl6_complete_years, mixture = ~ wave,
+ nwg=T))
+
+toc()
+
+##### Data Cleaning #####
+models$k6$gmm1_summarytable <- data.frame(summarytable(models$k6$gmm1_1class,
+                                                       models$k6$gmm1_2class,
+                                                       models$k6$gmm1_3class, 
+                                                       which = c("G", "loglik", "conv", 
+                                                                 "npm", "AIC", "BIC", 
+                                                                 "SABIC","entropy", "%class")))
+rownames(models$k6$gmm1_summarytable) <- c("GMM-1 1 class", "GMM-1 2 class", "GMM-1 3 class")
+
+
+
+models$pcl6$gmm1_summarytable <- data.frame(summarytable(models$pcl6$gmm1_1class,
+                                                         models$pcl6$gmm1_2class,
+                                                         models$pcl6$gmm1_3class, 
+                                                         which = c("G", "loglik", "conv", 
+                                                                 "npm", "AIC", "BIC", 
+                                                                 "SABIC","entropy", "%class")))
+rownames(models$pcl6$gmm1_summarytable) <- c("GMM-1 1 class", "GMM-1 2 class", "GMM-1 3 class")
+
+
+models$k6$gmm1_2class_pprobs <- data.frame(id_subject = models$k6$gmm1_2class$pprob$id_subject,
+                     gmm1_2class_traj_class = factor(models$k6$gmm1_2class$pprob$class))
+models$k6$gmm1_3class_pprobs <- data.frame(id_subject = models$k6$gmm1_3class$pprob$id_subject,
+                     gmm1_3class_traj_class = factor(models$k6$gmm1_3class$pprob$class))
+
+models$pcl6$gmm1_2class_pprobs <- data.frame(id_subject = models$pcl6$gmm1_2class$pprob$id_subject,
+                     gmm1_2class_traj_class = factor(models$pcl6$gmm1_2class$pprob$class))
+models$pcl6$gmm1_3class_pprobs <- data.frame(id_subject = models$pcl6$gmm1_3class$pprob$id_subject,
+                     gmm1_3class_traj_class = factor(models$pcl6$gmm1_3class$pprob$class))
+
+saveRDS(models, here("Models", "models.RDS"))
+
+```
+
+#GMM-2 Linear (RANDOM INTERCEPT AND SLOPE)
+##Creates GMM2 linear models for K6 and PCL6, returns summary statistics for models 
+##GMM2 detects heterogenous groups by trajectory and assumes within-group variation in intercept and slope (random effects)
+###Need to run this code on desktop or cloud due to long run time 
+```{r, echo=FALSE, eval=FALSE}
+##### K6 GMM-2 Models #####
+set.seed(2003)
+
+tic()
+
+models$k6$gmm2_1class <- hlme(k6 ~ wave, subject = "id_subject", random=~1+wave, ng = 1, data =
+data$k6_complete_years)
+
+saveRDS(models, here("Models", "models.RDS"))
+
+
+models$k6$gmm2_2class <- gridsearch(rep = 500, maxiter = 20, minit = models$k6$gmm2_1class,
+hlme(k6 ~ wave, subject = "id_subject", random=~1+wave,
+ ng = 2, data = data$k6_complete_years, mixture = ~ wave,
+ nwg=T))
+
+saveRDS(models, here("Models", "models.RDS"))
+
+models$k6$gmm2_3class <- gridsearch(rep = 500, maxiter = 20, minit = models$k6$gmm2_1class,
+ hlme(k6 ~ wave, subject = "id_subject", random=~1+wave,
+ ng = 3, data = data$k6_complete_years, mixture = ~ wave,
+ nwg=T))
+
+saveRDS(models, here("Models", "models.RDS"))
+
+toc()
+
+##### PCL6 GMM-2 Models #####
+set.seed(2003)
+
+tic()
+
+models$pcl6$gmm2_1class <- hlme(pcl6 ~ wave, subject = "id_subject", random=~1+wave, ng = 1, data =
+data$pcl6_complete_years)
+
+saveRDS(models, here("Models", "models.RDS"))
+
+
+models$pcl6$gmm2_2class <- gridsearch(rep = 500, maxiter = 20, minit = models$pcl6$gmm2_1class,
+hlme(pcl6 ~ wave, subject = "id_subject", random=~1+wave,
+ ng = 2, data = data$pcl6_complete_years, mixture = ~ wave,
+ nwg=T))
+
+saveRDS(models, here("Models", "models.RDS"))
+
+
+models$pcl6$gmm2_3class <- gridsearch(rep = 500, maxiter = 20, minit = models$pcl6$gmm2_1class,
+ hlme(pcl6 ~ wave, subject = "id_subject", random=~1+wave,
+ ng = 3, data = data$pcl6_complete_years, mixture = ~ wave,
+ nwg=T))
+
+saveRDS(models, here("Models", "models.RDS"))
+
+
+toc()
+
+##### Data Cleaning #####
+models$k6$gmm2_summarytable <- data.frame(summarytable(models$k6$gmm2_1class,
+                                                       models$k6$gmm2_2class,
+                                                       models$k6$gmm2_3class, 
+                                                       which = c("G", "loglik", "conv", 
+                                                                 "npm", "AIC", "BIC", 
+                                                                 "SABIC","entropy", "%class")))
+rownames(models$k6$gmm2_summarytable) <- c("GMM-2 1 class", "GMM-2 2 class", "GMM-2 3 class")
+
+
+
+models$pcl6$gmm2_summarytable <- data.frame(summarytable(models$pcl6$gmm2_1class,
+                                                         models$pcl6$gmm2_2class,
+                                                         models$pcl6$gmm2_3class, 
+                                                         which = c("G", "loglik", "conv", 
+                                                                 "npm", "AIC", "BIC", 
+                                                                 "SABIC","entropy", "%class")))
+rownames(models$pcl6$gmm2_summarytable) <- c("GMM-2 1 class", "GMM-2 2 class", "GMM-2 3 class")
+
+
+models$k6$gmm2_2class_pprobs <- data.frame(id_subject = models$k6$gmm2_2class$pprob$id_subject,
+                     gmm2_2class_traj_class = factor(models$k6$gmm2_2class$pprob$class))
+models$k6$gmm2_3class_pprobs <- data.frame(id_subject = models$k6$gmm2_3class$pprob$id_subject,
+                     gmm2_3class_traj_class = factor(models$k6$gmm2_3class$pprob$class))
+
+models$pcl6$gmm2_2class_pprobs <- data.frame(id_subject = models$pcl6$gmm2_2class$pprob$id_subject,
+                     gmm2_2class_traj_class = factor(models$pcl6$gmm2_2class$pprob$class))
+models$pcl6$gmm2_3class_pprobs <- data.frame(id_subject = models$pcl6$gmm2_3class$pprob$id_subject,
+                     gmm2_3class_traj_class = factor(models$pcl6$gmm2_3class$pprob$class))
+
+saveRDS(models, here("Models", "models.RDS"))
+```
+
+#Data Cleaning for Model Statistics
+##Creates a single data frame to compare model statistics
+###May need to assess 4 class models to ensure 3 class solutions are best 
+```{r}
+models$k6$all_model_statistics <- data.frame(rbind(models$k6$lcga_summarytable, 
+                                                   models$k6$gmm1_summarytable,
+                                                   models$k6$gmm2_summarytable))
+
+models$pcl6$all_model_statistics <- data.frame(rbind(models$pcl6$lcga_summarytable, 
+                                                   models$pcl6$gmm1_summarytable,
+                                                   models$pcl6$gmm2_summarytable))
+```
+
+#(INCOMPLETE) LMR-LRT ON LCGA K6 
+##Code currently non-functional. Adopted from a previous R file in graduate school
+##Lo-Mendell Rubin Liklihood Ratio Test compares models of n and n+1 classes to determine whether an increase in classes significantly improves model performance. 
+###Need to fix code
+```{r}
+vlmr_k6_lcga <- list()
+
+testing_models <- list(models$k6$lcga_1class, models$k6$lcga_2class, models$k6$lcga_3class)
+
+# Ensure loop starts from the second model, since you're comparing each model to its predecessor
+for (i in 2:length(testing_models)){
+  curr_null_ll <- testing_models[[i-1]]$loglik
+  null_param <- testing_models[[i-1]]$npar 
+  
+  alt_ll <- testing_models[[i]]$loglik
+  alt_param <- testing_models[[i]]$npar
+  
+  vlmr_result <- tidyLPA::calc_lrt(n = testing_models[[i]]$ns,  
+                          null_ll = curr_null_ll, 
+                          null_param = null_param, 
+                          null_classes = i, 
+                          alt_ll = alt_ll, 
+                          alt_param = alt_param, 
+                          alt_classes = i+1) 
+  
+  # Store the result in the list
+  vlmr_k6_lcga[[i-1]] <- vlmr_result
+}
+
+vlmr_k6_lcga_results <- data.frame()
+
+for (i in seq_along(vlmr_k6_lcga)) {
+  formatted_p_value <- sprintf("%.4f", as.numeric(vlmr_k6_lcga[[i]]["lmr_p"]))
+  
+  temp_row <- data.frame(null_classes = i + 1,
+                         alt_classes = i + 2,
+                         lmr_lr = vlmr_k6_lcga[[i]]["lmr_lr"],
+                         df = vlmr_k6_lcga[[i]][["df"]],
+                         lmr_p = formatted_p_value)
+  
+  vlmr_k6_lcga_results <- rbind(vlmr_k6_lcga_results, temp_row)
+  row.names(vlmr_k6_lcga_results) <- NULL
+}
+```
+
+#Random modeling notes 
+```{r}
+#mixture: denotes the stratifying class
+#random: denotes what parts are random effects. no arg = all fixed effects (LCGA), random = ~1 = random intercept (GMM-1), random = ~1+wave = random intercept and slope (GMM-2)
+#notes: random effect variance is calculated for the highest numbered class for intercept, slope, and intercept*slope covariance, take this value and multiple by square of the Proportional coefficient for each other class to get their variances
+#intercept-slope covariance: positive means that starting at higher intercept means higher slope, negative means starting at higher intercept means lower slope, no covariance means the two random effects are independent
+#we don't use slope only because this means only slope can vary and everyone is assumed to have the same baseline, which is rare 
+```
+
+#(INCOMPLETE) Graphing Classes
+##Meant to graph trajectory and sankey plots by trajectory using color aesthetic. Joins trajectory class predictions with full data sets
+###Need to revise to create these plots for every model
+```{r}
+
+######
+#fix to use k6_complete_years data including all pprobs and select traj_class vars from all models so that all the models can be graphed 
+  
+data$test_join_data_wide <- data$test_join_data %>%
+  select(id_subject, year, k6_cat, traj_class) %>%
+  mutate(year = paste0("year", year)) %>%
+  pivot_wider(names_from = year, values_from = k6_cat) %>%
+  drop_na()
+
+data$test_join_data_long <- data$test_join_data_wide %>%
+  pivot_longer(cols = starts_with("year"),
+               names_to = "year",
+               names_prefix = "year",
+               values_to = "k6_cat") %>%
+  arrange(id_subject, year)
+  
+#FIX PLOT TO USE PERCENTAGES INSTEAD OF RAW NUMBERS 
+ggplot(data$test_join_data_long,
+       aes(x = year, stratum = k6_cat, alluvium = id_subject, fill = k6_cat, label = k6_cat)) +
+  geom_flow(stat = "alluvium", lode.guidance = "forward", color = "blue", alpha = 0.2) +
+  geom_stratum(alpha = 0.8) +
+  geom_text(stat = "stratum", size = 3) +
+  scale_fill_brewer(type = "qual", palette = "Set2") +
+  labs(title = "Transitions Between K6 Categories",
+       y = "Number of Participants", x = "Year") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  facet_wrap(~ traj_class, nrow= 2)
+
+ggplot()+
+  geom_line(aes(y=k6, x=year, group=id_subject, color = traj_class),
+data=data$test_join_data) +
+  theme(legend.position = "right") + 
+  theme_classic() +
+  labs(title = "K6 Spaghetti Plot by Trajectory Class")
+
+data$test_join_data %>%
+  filter(!is.na(traj_class)) %>%
+ggplot()+
+  geom_line(aes(y=k6, x=year, group=id_subject)) +
+  theme(legend.position = "right") + 
+  theme_classic() + 
+  facet_wrap(~traj_class, nrow = 2) +
+  labs(title = "K6 Spaghetti Plot by Trajectory Class")
+```
+
+#Save Outputs in Directory
+##Creates subdirectories for plots, models and data and saves all objects 
+##Can be run at any point. Can later load in objects (specifically models) to save time 
+```{r}
+if (!dir.exists(here("Plots"))) {
+  dir.create(here("Plots"))
+} 
+
+if(!dir.exists(here("Models"))) {
+  dir.create(here("Models"))
+}
+
+if(!dir.exists(here("Data"))) {
+  dir.create(here("Data"))
+}
+
+
+for (plot_name in names(plots)) {
+  plot_object <- plots[[plot_name]]
+  
+  if(inherits(plot_object, "ggplot")){
+  ggsave(
+    filename = here("Plots",
+                    paste0(plot_name, ".jpg")),
+    plot = plot_object,
+    dpi = 300
+  )
+  }
+  
+  if(plot_name == "mean_traj_plots" && is.list(plot_object)){
+    if(!dir.exists("mean_traj_plots")) {
+      dir.create(here("Plots", "mean_traj_plots"))
+    }
+    
+    for (sub_name in names(plot_object)){
+      sub_plot <- plot_object[[sub_name]]
+      if (inherits(sub_plot, "ggplot")) {
+        ggsave(here("Plots", "mean_traj_plots", paste0("mean_traj_", sub_name, ".jpg")), 
+               plot = sub_plot, dpi = 300)
+      }
+    }
+  }
+  #if further nested lists exist, use if statements here to access items in nested lists  
+}
+
+saveRDS(models, here("Models", "models.RDS"))
+saveRDS(data, here("Data", "data.RDS"))
+
+#rm(plots, plot_objects)
+```
+
